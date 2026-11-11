@@ -43,7 +43,7 @@ const git = (args: string[], cwd = process.cwd()): string | undefined => {
 };
 
 function gitIdentity(): string {
-  return githubLogin() ?? git(["config", "user.email"])?.split("@")[0] ?? git(["config", "user.name"])?.split(" ")[0] ?? "anon";
+  return githubLogin() ?? git(["config", "user.email"])?.split("@")[0].replace(/^\d+\+/, "") ?? git(["config", "user.name"])?.split(" ")[0] ?? "anon";
 }
 
 /** Initialised prov root above cwd, else the git root, else cwd. */
