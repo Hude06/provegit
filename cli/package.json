@@ -1,0 +1,34 @@
+{
+  "name": "provegit",
+  "version": "0.1.0",
+  "description": "proveGIT \u2014 char/line-level provenance for AI-written code (Claude Code, Codex, OpenCode)",
+  "type": "module",
+  "bin": {
+    "prov": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "typecheck": "tsc -p . --noEmit",
+    "test": "tsx --test test/*.test.ts",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "chokidar": "^4.0.3",
+    "diff-match-patch": "^1.0.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "fsevents@2.3.3": true
+  }
+}
