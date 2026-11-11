@@ -1,3 +1,6 @@
 node_modules/
 dist/
 .prov/
+
+# GitHub Action bundle must be committed
+!action/dist/

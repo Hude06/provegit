@@ -7,18 +7,28 @@ import { lineOwners, ownerStats, splitLines } from "./apply.js";
 import { watch } from "./watch.js";
 import { hook } from "./hooks.js";
 import { integrate } from "./integrations.js";
-import { login, logout } from "./login.js";
+import { login, logout, openBrowser } from "./login.js";
+import { uiServer } from "./ui.js";
+import { tui } from "./tui.js";
 import { githubLogin, readCreds } from "./creds.js";
 import { sync } from "./sync.js";
 import { serve } from "./serve.js";
+import { githubInit } from "./github.js";
+import { buildNote, installGitHooks, pushNotes, readNote, replaying, summarize, writeNote } from "./notes.js";
 
 const USAGE = `prov — char/line-level provenance for AI-written code
 
   prov init [--force] [--hooks]     baseline tracked files to you (+ install agent hooks)
   prov install | uninstall          add/remove Claude Code, Codex and OpenCode adapters
+  prov ui [--port N] [--no-open]     live diff viewer: changes since HEAD, coloured by who wrote them
+  prov tui [--base REF] [--follow]  the same live diff viewer in the terminal (alias: prov diff)
   prov watch [--ttl SEC]            attribute live edits to you (or to an agent mid-edit; ttl caps a stuck window, default 120)
   prov <file> | prov blame <file>   ownership summary | per-line overlay
   prov stats                        repo-wide ownership
+  prov log [-n N] [REV]             commits with who wrote their lines (from git notes)
+  prov note [REV]                   (re)write REV's ownership note (the post-commit hook runs this)
+  prov notes push [REMOTE]          share notes now (git push also does it, via the pre-push hook)
+  prov github init [--uses REF]     add .github/workflows/prov.yml: PR comment + inline notes on agent-written lines
   prov claim <file> [--human | --harness H [--model M] [--effort E]]
   prov login [--client-id ID] | logout | whoami
   prov sync --server URL | prov serve [--port N]
@@ -158,8 +168,56 @@ async function main(): Promise<void> {
       return hook(argv[1] ?? "unknown");
     case "init":
       cmdInit(argv.includes("--force"));
+      for (const line of installGitHooks(projectRoot(), resolve(process.argv[1]))) console.log(line);
       if (argv.includes("--hooks")) cmdIntegrate(true);
       return;
+    case "note": {
+      // --hook: called from post-commit; silent, never fails the commit, and leaves rebases to git's note copying.
+      const quiet = argv.includes("--hook");
+      try {
+        const root = projectRoot();
+        const rev = argv[1] && !argv[1].startsWith("--") ? argv[1] : "HEAD";
+        if (quiet && (!findProvRoot(root) || replaying(root))) return;
+        const store = openStore(root);
+        const note = buildNote(store, root, rev, store.human(gitIdentity()));
+        if (!note) throw new Error(`${rev} is not a commit`);
+        writeNote(root, note);
+        if (!quiet) console.log(`${note.commit.slice(0, 8)}  ${summarize(note)}`);
+      } catch (e) {
+        if (!quiet) throw e;
+      }
+      return;
+    }
+    case "log": {
+      const root = projectRoot();
+      const n = Number(flag("-n") ?? 20) || 20;
+      const rev = argv.slice(1).find((a, i, all) => !a.startsWith("-") && all[i - 1] !== "-n") ?? "HEAD";
+      const lines = (git(["log", `-n${n}`, "--no-merges", "--format=%H%x09%s", rev], root) ?? "").split("\n").filter(Boolean);
+      if (!lines.length) throw new Error(`no commits at ${rev}`);
+      for (const l of lines) {
+        const [sha, subject] = l.split("\t");
+        const note = readNote(root, sha);
+        console.log(`${sha.slice(0, 8)}  ${subject.length > 50 ? subject.slice(0, 49) + "…" : subject.padEnd(50)}  ${note ? summarize(note) : "— no note (prov note " + sha.slice(0, 8) + ")"}`);
+      }
+      return;
+    }
+    case "notes": {
+      if (argv[1] !== "push") throw new Error("usage: prov notes push [REMOTE]");
+      const remote = argv[2] && !argv[2].startsWith("--") ? argv[2] : "origin";
+      if (argv.includes("--hook")) {
+        // From pre-push, detached: wait for the user's `git push` to finish, then send notes. Never errors.
+        const pid = Number(flag("--after-pid"));
+        const alive = () => { try { process.kill(pid, 0); return true; } catch { return false; } };
+        for (let waited = 0; pid > 1 && alive() && waited < 600_000; waited += 250) await new Promise((r) => setTimeout(r, 250));
+        try { pushNotes(projectRoot(), remote); } catch {}
+        return;
+      }
+      return console.log(pushNotes(projectRoot(), remote));
+    }
+    case "github": {
+      if (argv[1] !== "init") throw new Error("usage: prov github init [--uses OWNER/REPO/action@REF]");
+      return console.log(githubInit(projectRoot(), flag("--uses")));
+    }
     case "install":
       return cmdIntegrate(true);
     case "uninstall":
@@ -168,6 +226,38 @@ async function main(): Promise<void> {
       const root = projectRoot();
       const ttl = Number(flag("--ttl") ?? 120) || 120;
       await watch(root, openStore(root), gitIdentity(), ttl, (s) => console.log(s));
+      return;
+    }
+    case "tui":
+    case "diff": {
+      const root = projectRoot();
+      await tui(openStore(root), { base: flag("--base"), follow: argv.includes("--follow"), identity: gitIdentity(), ttl: Number(flag("--ttl") ?? 120) || 120 });
+      process.exit(0);
+    }
+    case "ui": {
+      const root = projectRoot();
+      const store = openStore(root);
+      // Catch up on edits made while nothing was watching (agent edits are already recorded by hooks).
+      const human = store.human(gitIdentity());
+      const z = (args: string[]) => (git(args, root) ?? "").split("\0").filter((f) => f && !f.startsWith(".prov/"));
+      let caught = 0;
+      for (const f of z(["ls-files", "-z", "--modified", "--deleted", "--others", "--exclude-standard"])) {
+        const disk = readText(join(root, f));
+        if (disk === null) continue;
+        if (disk === undefined && !store.file(f)) continue;
+        if (store.applyChange(f, disk ?? "", store.activeSession([f], 120) ?? human)) caught++;
+      }
+      if (caught) console.log(`recorded ${caught} file(s) changed while prov wasn't watching → ${store.envLabel(human)}`);
+      const port = Number(flag("--port") ?? 8718) || 8718;
+      const server = uiServer(store, port, (s) => console.log(s));
+      server.on("error", (e: any) => {
+        console.error(e?.code === "EADDRINUSE" ? `prov: port ${port} is busy — try prov ui --port ${port + 1}` : `prov: ${e.message}`);
+        process.exit(1);
+      });
+      server.on("listening", () => {
+        if (!argv.includes("--no-open")) openBrowser(`http://127.0.0.1:${port}`);
+      });
+      await watch(root, store, gitIdentity(), Number(flag("--ttl") ?? 120) || 120, (s) => console.log(s));
       return;
     }
     case "login": {

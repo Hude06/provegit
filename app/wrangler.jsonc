@@ -1,0 +1,11 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "prov-github-app",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-11-11",
+  "observability": {
+    "enabled": true,
+    "traces": { "enabled": true }
+  }
+  // Secrets (never in this file): APP_ID, PRIVATE_KEY (PKCS#8 PEM), WEBHOOK_SECRET — set by `npm run register`.
+}

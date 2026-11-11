@@ -7,7 +7,8 @@
     "prov": "dist/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "ui"
   ],
   "engines": {
     "node": ">=22.13"
@@ -16,7 +17,8 @@
     "build": "tsc -p .",
     "typecheck": "tsc -p . --noEmit",
     "test": "tsx --test test/*.test.ts",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "build:action": "esbuild src/action.ts --bundle --platform=node --target=node20 --format=esm --outfile=../action/dist/index.mjs --banner:js=\"// prov GitHub Action \u2014 generated from cli/src/action.ts; do not edit\""
   },
   "dependencies": {
     "chokidar": "^4.0.3",

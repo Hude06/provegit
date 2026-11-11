@@ -8,6 +8,7 @@ import { verifyChain } from "../src/serve.ts";
 import { parsePayload, pathsFromToolInput, record, subagentTranscript, modelFromTranscript } from "../src/hooks.ts";
 import { integrate, MARK, opencodePlugin } from "../src/integrations.ts";
 import { sha256, Store } from "../src/store.ts";
+import { fileDiff } from "../src/ui.ts";
 
 const tmp = () => mkdtempSync(join(tmpdir(), "prov-test-"));
 
@@ -149,4 +150,19 @@ test("opencode plugin is valid JS exporting a plugin", async () => {
   await hooks["chat.message"]({ sessionID: "s", model: { providerID: "p", modelID: "m" }, variant: "high" });
   await hooks["tool.execute.before"]({ tool: "read", sessionID: "s", callID: "c" }, { args: {} }); // non-edit tool: no spawn
   assert.equal(mod.default.id, "prov");
+});
+
+test("fileDiff: line rows carry per-char owners for current lines", () => {
+  const base = "a\nb\nc\n";
+  const cur = "a\nbX\nnew\nc\n";
+  // owners of cur: "a\nb" human(1), "X" agent(2), "\n" human, "new\n" agent, "c\n" human
+  const runs = [{ l: 3, o: "1" }, { l: 1, o: "2" }, { l: 1, o: "1" }, { l: 4, o: "2" }, { l: 2, o: "1" }];
+  const d = fileDiff(base, cur, runs);
+  assert.deepEqual(d.rows.map((r) => r.k), ["ctx", "del", "add", "add", "ctx"]);
+  assert.deepEqual(d.rows[2].s, [["b", "1", 0], ["X", "2", 1]]);
+  assert.deepEqual(d.rows[3].s, [["new", "2", 1]]);
+  assert.equal(d.added["2"], 4);
+  assert.equal(d.delLines, 1);
+  assert.deepEqual(d.rows[1].d, [["b", 0]]); // "b" line kept its text; only the newline position moved
+  assert.deepEqual([d.rows[4].o, d.rows[4].n], [3, 4]);
 });

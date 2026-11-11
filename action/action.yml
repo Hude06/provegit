@@ -1,0 +1,22 @@
+name: prov — who wrote this PR
+description: Shows which lines in a pull request were written by AI agents (Claude Code, Codex, OpenCode…) and which by people, from prov's git notes.
+author: proveGIT
+branding:
+  icon: git-pull-request
+  color: purple
+inputs:
+  token:
+    description: Token used to comment on the PR and create the check run.
+    default: ${{ github.token }}
+  comment:
+    description: Post (and keep updating) one summary comment on the PR.
+    default: "true"
+  annotations:
+    description: Add a check run with inline notes on lines written by agents.
+    default: "true"
+  tool-url:
+    description: Link shown in the comment footer.
+    default: ""
+runs:
+  using: node24
+  main: dist/index.mjs

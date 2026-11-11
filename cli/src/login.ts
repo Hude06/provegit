@@ -17,7 +17,7 @@ async function postForm(url: string, form: Record<string, string>): Promise<any>
   }
 }
 
-function openBrowser(url: string): void {
+export function openBrowser(url: string): void {
   const [cmd, args] =
     process.platform === "darwin" ? ["open", [url]] : process.platform === "win32" ? ["cmd", ["/c", "start", "", url]] : ["xdg-open", [url]];
   try {
