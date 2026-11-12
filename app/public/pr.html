@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>prov · who wrote this</title>
+<style>
+:root {
+  --bg: #ffffff; --subtle: #f6f8fa; --border: #d1d9e0; --border-muted: #d1d9e0b3;
+  --text: #1f2328; --muted: #59636e; --accent: #0969da; --sel: #ddf4ff;
+  --add-bg: #dafbe1; --add-word: #aceebb; --add-num: #ccffd8; --add-fg: #1a7f37;
+  --del-bg: #ffebe9; --del-word: #ffcecb; --del-num: #ffd7d5; --del-fg: #d1242f;
+  --hunk-bg: #ddf4ff; --hunk-num: #b6e3ff; --empty: #f6f8fa; --mod-fg: #9a6700;
+  --human: #6e7781;
+  --ink-l: 0.55; --ink-c: 0.17; --wash-l: 0.9; --wash-c: 0.08;
+  --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1117; --subtle: #151b23; --border: #3d444d; --border-muted: #3d444db3;
+    --text: #f0f6fc; --muted: #9198a1; --accent: #4493f8; --sel: #1f6feb26;
+    --add-bg: #2ea04326; --add-word: #2ea04366; --add-num: #3fb9504d; --add-fg: #3fb950;
+    --del-bg: #f851491a; --del-word: #f8514966; --del-num: #f851494d; --del-fg: #f85149;
+    --hunk-bg: #388bfd1a; --hunk-num: #388bfd66; --empty: #151b23; --mod-fg: #d29922;
+    --human: #9198a1;
+    --ink-l: 0.74; --ink-c: 0.15; --wash-l: 0.38; --wash-c: 0.1;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--text); font: 14px/1.5 var(--ui); display: flex; flex-direction: column; }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; text-align: left; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 6px; }
+.adds { color: var(--add-fg); } .dels { color: var(--del-fg); }
+
+/* top bar */
+.bar { display: flex; align-items: center; gap: 16px; padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--subtle); flex-wrap: wrap; }
+.brand { font-weight: 600; }
+.repo { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+.base { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
+.base input { font: 12px var(--mono); color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; width: 12ch; }
+.base input[aria-invalid="true"] { border-color: var(--del-fg); }
+.live { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.live::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--add-fg); }
+.live.off::before { background: var(--muted); }
+.live.pulse::before { animation: pulse .9s ease-out; }
+@keyframes pulse { from { box-shadow: 0 0 0 0 color-mix(in srgb, var(--add-fg) 60%, transparent); } to { box-shadow: 0 0 0 8px transparent; } }
+
+.app { flex: 1; display: grid; grid-template-columns: 300px 1fr; min-height: 0; }
+
+/* sidebar */
+aside { border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; }
+.tabs { display: flex; gap: 8px; padding: 8px 12px 0; border-bottom: 1px solid var(--border); }
+.tabs button { padding: 8px; font-size: 14px; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tabs button[aria-selected="true"] { color: var(--text); font-weight: 600; border-color: #fd8c73; }
+.counter { display: inline-block; min-width: 20px; padding: 0 6px; margin-left: 6px; font-size: 12px; font-weight: 500; line-height: 18px; text-align: center; border-radius: 999px; background: color-mix(in srgb, var(--muted) 18%, transparent); color: var(--text); }
+.counter:empty { display: none; }
+.list { overflow: auto; flex: 1; padding: 8px; }
+.empty { color: var(--muted); padding: 12px 8px; font-size: 13px; }
+
+.item { display: grid; grid-template-columns: 16px 1fr auto; align-items: center; gap: 0 8px; width: 100%; padding: 6px 8px; border-radius: 6px; font-size: 13px; }
+.item:hover { background: var(--subtle); }
+.item[aria-current="true"] { background: var(--sel); }
+.item .st { font: 600 11px var(--mono); text-align: center; line-height: 16px; }
+.st-added { color: var(--add-fg); } .st-deleted { color: var(--del-fg); } .st-modified { color: var(--mod-fg); }
+.item .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item .name .dir { color: var(--muted); }
+.item .nums { font: 12px var(--mono); }
+.item .sub { grid-column: 2 / -1; display: flex; gap: 8px; color: var(--muted); font-size: 12px; min-width: 0; }
+.item .sub .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+.item .sub .when { flex: none; }
+.item.baseline .name { color: var(--muted); }
+.fresh { animation: fresh 1.6s ease-out; }
+@keyframes fresh { from { background: var(--sel); } to { background: transparent; } }
+
+/* main */
+main { overflow: auto; min-width: 0; padding: 16px 24px 48px; }
+.toolbar { display: flex; align-items: center; gap: 12px 16px; flex-wrap: wrap; margin-bottom: 16px; }
+.summary { font-size: 14px; color: var(--muted); }
+.summary b { color: var(--text); font-weight: 600; }
+.spacer { flex: 1; }
+.legend { display: flex; gap: 6px; flex-wrap: wrap; margin: -4px 0 16px; }
+.legend:empty { display: none; }
+.chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 2px 10px 2px 8px; border-radius: 999px; border: 1px solid var(--border); line-height: 18px; }
+.chip .pct { color: var(--muted); }
+.chip[aria-pressed="true"] { border-color: var(--accent); background: var(--sel); }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.seg button { font-size: 12px; padding: 4px 12px; }
+.seg button + button { border-left: 1px solid var(--border); }
+.seg button[aria-pressed="true"] { background: var(--subtle); font-weight: 600; }
+.check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.back { font-size: 13px; color: var(--accent); }
+.back:hover { text-decoration: underline; }
+
+/* file card */
+.file { border: 1px solid var(--border); border-radius: 6px; margin-bottom: 16px; }
+.fhead { position: sticky; top: -16px; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 4px; background: var(--subtle); border-bottom: 1px solid var(--border); border-radius: 6px 6px 0 0; min-height: 44px; flex-wrap: wrap; }
+.file.collapsed .fhead { border-bottom: 0; border-radius: 6px; }
+.chev { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 6px; color: var(--muted); }
+.chev:hover { background: color-mix(in srgb, var(--muted) 15%, transparent); }
+.chev svg { transition: transform .12s; }
+.file.collapsed .chev svg { transform: rotate(-90deg); }
+.fnums { font: 12px var(--mono); }
+.stat { display: inline-flex; gap: 1px; }
+.stat i { width: 8px; height: 8px; display: block; background: color-mix(in srgb, var(--muted) 30%, transparent); }
+.stat i.a { background: var(--add-fg); } .stat i.d { background: var(--del-fg); }
+.fpath { font: 600 12px var(--mono); overflow-wrap: anywhere; flex: 1; min-width: 0; }
+.fwho { display: flex; gap: 4px; flex-wrap: wrap; }
+.fbody { overflow-x: auto; border-radius: 0 0 6px 6px; }
+.file.collapsed .fbody { display: none; }
+.note { padding: 16px; color: var(--muted); font-size: 13px; text-align: center; margin: 0; }
+.note button { color: var(--accent); }
+
+/* diff table */
+.diff { width: 100%; border-collapse: collapse; table-layout: fixed; font: 12px/20px var(--mono); tab-size: 4; }
+.diff td { padding: 0; vertical-align: top; }
+.diff .num { padding: 0 10px; text-align: right; color: var(--muted); user-select: none; }
+.diff .blame { position: relative; padding: 0 8px 0 14px; font: 12px/20px var(--ui); color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; user-select: none; background: var(--bg); }
+.diff .blame::before { content: ""; position: absolute; left: 5px; top: 0; bottom: 0; width: 3px; background: var(--c); }
+.diff .blame.old { color: var(--muted); }
+.diff .blame.old::before { width: 2px; opacity: .35; }
+.diff .blame.empty { background: var(--empty); }
+.diff .blame.empty::before { display: none; }
+.diff.split .blame { border-left: 1px solid var(--border-muted); }
+tr.blk td { border-top: 1px solid var(--border-muted); }
+.focusing .blame:not(.on) { color: var(--muted); }
+.focusing .blame:not(.on)::before { opacity: .15; }
+.diff .code { padding: 0 10px 0 22px; white-space: pre-wrap; overflow-wrap: anywhere; position: relative; }
+.diff .code.add::before, .diff .code.del::before { position: absolute; left: 8px; color: var(--text); }
+
+td.code.add { background: var(--add-bg); }
+td.code.add::before { content: "+"; }
+td.code.del { background: var(--del-bg); }
+td.code.del::before { content: "−"; }
+td.num.add { background: var(--add-num); }
+td.num.del { background: var(--del-num); }
+td.empty { background: var(--empty); }
+.wd { background: var(--add-word); border-radius: 2px; }
+.wd.whole { background: none; }
+.wr { background: var(--del-word); border-radius: 2px; }
+.byauthor .wd.agent { background: oklch(var(--wash-l) var(--wash-c) var(--h)); box-shadow: inset 0 -2px oklch(var(--ink-l) var(--ink-c) var(--h)); }
+.byauthor .wd.human { box-shadow: inset 0 -2px var(--human); }
+.focusing .wd:not(.on) { background: none; box-shadow: none; }
+
+tr.hunk td { background: var(--hunk-bg); color: var(--muted); }
+tr.hunk td.num { background: var(--hunk-num); padding: 0; }
+tr.hunk .exp { width: 100%; min-height: 20px; display: grid; place-items: center; color: var(--muted); }
+tr.hunk .exp:hover { background: var(--accent); color: #fff; }
+tr.hunk td.code { padding-left: 10px; }
+
+.tag { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; font: 11px/16px var(--ui); padding: 0 6px; margin: 2px 2px 0 0; border-radius: 999px; background: var(--bg); border: 1px solid var(--border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: top; }
+.tag .dot { width: 6px; height: 6px; }
+
+
+.tip { position: fixed; z-index: 10; pointer-events: none; background: var(--text); color: var(--bg); font: 12px/1.4 var(--ui); padding: 4px 8px; border-radius: 6px; max-width: 360px; }
+
+@media (max-width: 860px) {
+  .app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+  aside { border-right: 0; border-bottom: 1px solid var(--border); max-height: 34vh; }
+  main { padding: 12px 12px 40px; }
+}
+@media (prefers-reduced-motion: reduce) { .fresh, .live.pulse::before { animation: none; } .chev svg { transition: none; } }
+.bar a { color: inherit; text-decoration: none; }
+.bar a:hover { text-decoration: underline; }
+.title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+.title .num { color: var(--muted); font-weight: 400; }
+.meta { color: var(--muted); font-size: 12px; }
+.warn { color: var(--mod-fg); }
+.list .item .sub { display: none; }
+.item .bar2 { grid-column: 2 / -1; display: flex; height: 3px; border-radius: 2px; overflow: hidden; margin-top: 4px; background: var(--border-muted); }
+.item .bar2 i { display: block; height: 100%; }
+.center { display: grid; place-items: center; min-height: 50vh; text-align: center; color: var(--muted); }
+.center a.btn { display: inline-block; margin-top: 12px; padding: 6px 16px; border-radius: 6px; background: var(--add-fg); color: #fff; text-decoration: none; font-weight: 600; }
+</style>
+</head>
+<body>
+<header class="bar">
+  <span class="brand">prov</span>
+  <span class="title" id="title">Loading pull request…</span>
+  <span class="meta" id="meta"></span>
+</header>
+<div class="app">
+  <aside>
+    <div class="tabs"><button aria-selected="true" tabindex="-1">Files changed<span class="counter" id="nChanges"></span></button></div>
+    <nav id="changes" class="list"></nav>
+  </aside>
+  <main id="main">
+    <div class="toolbar">
+      <span class="summary" id="summary"></span>
+      <span class="spacer"></span>
+      <label class="check"><input type="checkbox" id="byAuthor"> Color by author</label>
+      <div class="seg" role="group" aria-label="Diff layout">
+        <button data-layout="split" aria-pressed="true">Split</button>
+        <button data-layout="unified" aria-pressed="false">Unified</button>
+      </div>
+    </div>
+    <div class="legend" id="legend"></div>
+    <div id="files"></div>
+  </main>
+</div>
+<div class="tip" id="tip" hidden></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const HUE = { claude: 292, codex: 160, opencode: 62 };
+const hash = (s) => [...String(s)].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
+const pref = (k, d) => { try { return localStorage.getItem("prov." + k) ?? d; } catch { return d; } };
+const save = (k, v) => { try { localStorage.setItem("prov." + k, v); } catch {} };
+const pl = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+
+const state = {
+  pr: null, actors: {}, files: [], focus: null, collapsed: new Set(), open: new Set(),
+  layout: pref("layout", innerWidth < 860 ? "unified" : "split"), byAuthor: pref("byAuthor", "0") === "1",
+};
+
+/* ---------- authors ---------- */
+function author(id) {
+  const a = state.actors[id];
+  if (!a || a.kind === "unknown") return { cls: "unknown", hue: 0, name: "not recorded", full: "Not recorded by prov" };
+  if (a.kind === "human") return { cls: "human", hue: 0, name: a.name, full: `Written by ${a.name}` };
+  const h = a.harness || a.name;
+  const base = HUE[h] ?? hash(h) % 360;
+  const hue = (base + ((hash((a.model ?? "") + "@" + (a.effort ?? "")) % 3) - 1) * 18 + 360) % 360;
+  return { cls: "agent", hue, name: a.name, full: `Written by ${h}${a.model ? ", " + a.model : ""}${a.effort ? ", effort " + a.effort : ""}` };
+}
+const color = (id) => {
+  const a = author(id);
+  return a.cls === "agent" ? `oklch(var(--ink-l) var(--ink-c) ${a.hue})` : a.cls === "human" ? "var(--human)" : "var(--border)";
+};
+const longName = (id) => state.actors[id]?.long ?? "not recorded";
+const on = (id) => (state.focus === id ? " on" : "");
+const tag = (id) => `<span class="tag${on(id)}" data-a="${esc(id)}"><span class="dot" style="background:${color(id)}"></span>${esc(author(id).name)}</span>`;
+
+/* ---------- diff rendering (same as prov ui) ---------- */
+function addCode(r) {
+  const whole = !r.s.some(([t, , n]) => t && !n);
+  return r.s.map(([t, o, n]) => {
+    if (!t) return "";
+    if (!n) return esc(t);
+    const a = author(o);
+    return `<span class="wd ${a.cls}${whole ? " whole" : ""}${on(o)}" data-a="${esc(o)}" style="--h:${a.hue}">${esc(t)}</span>`;
+  }).join("");
+}
+const ctxCode = (r) => r.s.map(([t]) => esc(t)).join("");
+const delCode = (r) => {
+  const whole = !r.d.some(([t, g]) => t && !g);
+  return r.d.map(([t, g]) => (g && !whole ? `<span class="wr">${esc(t)}</span>` : esc(t))).join("");
+};
+const lineOwner = (r) => r.s?.[0]?.[1] ?? "?";
+let blame = null;
+function blameCell(r) {
+  const owner = lineOwner(r), changed = r.k === "add", key = owner + (changed ? "+" : "");
+  const start = blame !== key;
+  blame = key;
+  return { start, html: `<td class="blame ${changed ? "chg" : "old"}${on(owner)}" data-a="${esc(owner)}" style="--c:${color(owner)}">${start ? esc(author(owner).name) : ""}</td>` };
+}
+const tr = (start, cells) => `<tr${start ? ' class="blk"' : ""}>${cells}</tr>`;
+
+function renderRows(rows, split) {
+  let html = "";
+  const lead = split ? 1 : 3, rest = split ? 4 : 1;
+  for (let i = 0; i < rows.length;) {
+    const r = rows[i];
+    if (r.h) { html += `<tr class="hunk"><td class="num" colspan="${lead}"></td><td class="code" colspan="${rest}">${esc(r.h)}</td></tr>`; blame = null; }
+    if (r.k === "ctx") {
+      const b = blameCell(r);
+      html += tr(b.start, split
+        ? `<td class="num">${r.o}</td><td class="code o">${ctxCode(r)}</td>${b.html}<td class="num">${r.n}</td><td class="code">${ctxCode(r)}</td>`
+        : `${b.html}<td class="num">${r.o}</td><td class="num">${r.n}</td><td class="code">${ctxCode(r)}</td>`);
+      i++;
+      continue;
+    }
+    let j = i;
+    const ds = [], as = [];
+    while (j < rows.length && rows[j].k === "del" && (j === i || !rows[j].h)) ds.push(rows[j++]);
+    while (j < rows.length && rows[j].k === "add" && (j === i || !rows[j].h)) as.push(rows[j++]);
+    if (split) {
+      for (let k = 0; k < Math.max(ds.length, as.length); k++) {
+        const d = ds[k], a = as[k];
+        const b = a ? blameCell(a) : { start: false, html: `<td class="blame empty"></td>` };
+        html += tr(b.start,
+          (d ? `<td class="num del">${d.o}</td><td class="code o del">${delCode(d)}</td>` : `<td class="num empty"></td><td class="code o empty"></td>`) +
+          b.html +
+          (a ? `<td class="num add">${a.n}</td><td class="code add">${addCode(a)}</td>` : `<td class="num empty"></td><td class="code empty"></td>`));
+      }
+    } else {
+      for (const d of ds) html += `<tr><td class="blame empty"></td><td class="num del">${d.o}</td><td class="num del"></td><td class="code del">${delCode(d)}</td></tr>`;
+      for (const a of as) { const b = blameCell(a); html += tr(b.start, `${b.html}<td class="num add"></td><td class="num add">${a.n}</td><td class="code add">${addCode(a)}</td>`); }
+    }
+    i = j;
+  }
+  return html;
+}
+
+const CHEV = `<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M12.78 5.22a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L3.22 6.28a.75.75 0 0 1 1.06-1.06L8 8.94l3.72-3.72a.75.75 0 0 1 1.06 0Z"/></svg>`;
+function diffstat(a, d) {
+  const total = a + d, n = 5;
+  const ga = total ? Math.round((a / total) * n) : 0;
+  const gd = total ? Math.min(n - ga, Math.max(d ? 1 : 0, Math.round((d / total) * n))) : 0;
+  return `<span class="stat" aria-hidden="true">${"<i class=a></i>".repeat(ga)}${"<i class=d></i>".repeat(gd)}${"<i></i>".repeat(n - ga - gd)}</span>`;
+}
+
+function fileCard(f) {
+  const split = state.layout === "split", key = f.path, collapsed = state.collapsed.has(key);
+  const authors = Object.entries(f.added).sort((a, b) => b[1] - a[1]).map(([o]) => o);
+  let body;
+  if (f.note) body = `<p class="note">${esc(f.note)}</p>`;
+  else if (!f.rows.length) body = `<p class="note">No line changes.</p>`;
+  else if (f.rows.length > 3000 && !state.open.has(key)) body = `<p class="note">Large diff, ${f.rows.length} lines. <button data-big="${esc(key)}">Load diff</button></p>`;
+  else {
+    const cols = split
+      ? `<col style="width:52px"><col><col style="width:120px"><col style="width:52px"><col>`
+      : `<col style="width:120px"><col style="width:52px"><col style="width:52px"><col>`;
+    blame = null;
+    body = `<table class="diff ${split ? "split" : "unified"}"><colgroup>${cols}</colgroup><tbody>${renderRows(f.rows, split)}</tbody></table>`;
+  }
+  const unrecorded = f.addLines && !f.recorded ? `<span class="meta warn" title="${esc(f.reason || "")}">not recorded</span>` : "";
+  const name = f.previous && f.previous !== f.path ? `${esc(f.previous)} → ${esc(f.path)}` : esc(f.path);
+  return `<section class="file${collapsed ? " collapsed" : ""}" id="f:${esc(key)}">
+    <div class="fhead">
+      <button class="chev" data-collapse="${esc(key)}" aria-expanded="${!collapsed}" aria-label="Show or hide ${esc(f.path)}">${CHEV}</button>
+      <span class="fnums"><span class="adds">+${f.addLines}</span> <span class="dels">−${f.delLines}</span></span>
+      ${diffstat(f.addLines, f.delLines)}
+      <span class="fpath">${name}</span>
+      <span class="fwho">${authors.map(tag).join("")}${unrecorded}</span>
+    </div>
+    <div class="fbody">${body}</div>
+  </section>`;
+}
+
+/* ---------- page ---------- */
+const nameHtml = (p) => { const i = p.lastIndexOf("/"); return `<span class="dir">${esc(p.slice(0, i + 1))}</span>${esc(p.slice(i + 1))}`; };
+function sidebar() {
+  $("nChanges").textContent = state.files.length || "";
+  $("changes").innerHTML = state.files.map((f) => {
+    const total = Object.values(f.added).reduce((s, n) => s + n, 0) || 1;
+    const segs = Object.entries(f.added).sort((a, b) => b[1] - a[1]).map(([o, n]) => `<i style="width:${(n / total) * 100}%;background:${color(o)}"></i>`).join("");
+    const st = f.status === "added" ? "added" : f.status === "removed" ? "deleted" : "modified";
+    return `<button class="item" data-goto="${esc(f.path)}" title="${esc(f.path)}">
+      <span class="st st-${st}">${st[0].toUpperCase()}</span>
+      <span class="name">${nameHtml(f.path)}</span>
+      <span class="nums"><span class="adds">+${f.addLines}</span> <span class="dels">−${f.delLines}</span></span>
+      ${segs ? `<span class="bar2">${segs}</span>` : ""}
+    </button>`;
+  }).join("") || `<p class="empty">No files changed.</p>`;
+}
+function legend(added) {
+  const entries = Object.entries(added).sort((a, b) => b[1] - a[1]);
+  const total = entries.reduce((s, [, n]) => s + n, 0) || 1;
+  $("legend").innerHTML = entries.map(([id, n]) =>
+    `<button class="chip" data-focus="${esc(id)}" aria-pressed="${state.focus === id}" title="Highlight only ${esc(longName(id))}">
+      <span class="dot" style="background:${color(id)}"></span>${esc(longName(id))}<span class="pct">${Math.round((n / total) * 100)}%</span></button>`).join("");
+}
+function render() {
+  if (!state.pr) return; // still loading
+  const main = $("main"), top = main.scrollTop;
+  $("files").className = `${state.byAuthor ? "byauthor" : ""}${state.focus ? " focusing" : ""}`;
+  document.querySelectorAll(".seg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.layout === state.layout)));
+  $("byAuthor").checked = state.byAuthor;
+  const adds = state.files.reduce((s, f) => s + f.addLines, 0), dels = state.files.reduce((s, f) => s + f.delLines, 0);
+  const added = {};
+  for (const f of state.files) for (const [o, n] of Object.entries(f.added)) added[o] = (added[o] || 0) + n;
+  $("summary").innerHTML = `Showing <b>${pl(state.files.length, "changed file")}</b> with <b>${pl(adds, "addition")}</b> and <b>${pl(dels, "deletion")}</b>`;
+  legend(added);
+  $("files").innerHTML = state.files.map(fileCard).join("") || `<p class="note">This pull request changes no files.</p>`;
+  main.scrollTop = top;
+}
+
+document.addEventListener("click", (ev) => {
+  const b = ev.target.closest("button");
+  if (!b) return;
+  const d = b.dataset;
+  if (d.layout) { state.layout = d.layout; save("layout", d.layout); return render(); }
+  if (d.goto) { state.collapsed.delete(d.goto); render(); document.getElementById("f:" + d.goto)?.scrollIntoView({ block: "start" }); return; }
+  if (d.collapse) { state.collapsed.has(d.collapse) ? state.collapsed.delete(d.collapse) : state.collapsed.add(d.collapse); return render(); }
+  if (d.big) { state.open.add(d.big); return render(); }
+  if (d.focus !== undefined) { state.focus = state.focus === d.focus ? null : d.focus; return render(); }
+});
+$("byAuthor").addEventListener("change", (e) => { state.byAuthor = e.target.checked; save("byAuthor", state.byAuthor ? "1" : "0"); render(); });
+
+const tip = $("tip");
+document.addEventListener("mouseover", (e) => {
+  const el = e.target.closest("[data-a]");
+  if (!el) { tip.hidden = true; return; }
+  tip.textContent = author(el.dataset.a).full;
+  tip.hidden = false;
+});
+document.addEventListener("mousemove", (e) => {
+  if (tip.hidden) return;
+  tip.style.left = Math.min(e.clientX + 12, innerWidth - tip.offsetWidth - 8) + "px";
+  tip.style.top = e.clientY + 16 + "px";
+});
+
+function fail(msg, signIn) {
+  $("title").textContent = "prov";
+  $("files").innerHTML = `<div class="center"><div><p>${esc(msg)}</p>${signIn ? `<a class="btn" href="/login?next=${encodeURIComponent(location.pathname)}">Sign in with GitHub</a>` : ""}</div></div>`;
+}
+
+(async function init() {
+  try {
+    const r = await fetch("/api" + location.pathname, { credentials: "same-origin" });
+    const j = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
+    if (!r.ok) return fail(j.error || `HTTP ${r.status}`, r.status === 401);
+    state.pr = j; state.actors = j.actors; state.files = j.files;
+    document.title = `${j.title} · #${j.number} · prov`;
+    $("title").innerHTML = `<a href="${esc(j.url)}">${esc(j.title)} <span class="num">#${j.number}</span></a>`;
+    $("meta").innerHTML = `${esc(j.repo)} · ${esc(String(j.head).slice(0, 7))}` +
+      (j.notedCommits < j.commits ? ` · <span class="warn" title="Commits made without prov, or notes not pushed yet">${j.notedCommits} of ${pl(j.commits, "commit")} recorded</span>` : "");
+    sidebar(); render();
+  } catch (err) { fail(err.message); }
+})();
+</script>
+</body>
+</html>

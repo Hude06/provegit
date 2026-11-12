@@ -31,6 +31,8 @@ Stack: TypeScript (hooks ecosystem), SQLite, no model APIs. Demo repo with 3 age
 - [x] pre-push hook pushes notes in background after `git push` exits (back-to-back pushes → GitHub intermittent `remote rejected (failed)`, verified 1/3 → 0/5); Action/App re-check for trailing notes.
 - [x] GitHub App code (2026-11-11): Cloudflare Worker `app/` (webhook HMAC verify, RS256 app JWT incl. PKCS#1→PKCS#8, installation token, notes via git data API, fork head-repo notes) + `app/scripts/register.mjs` manifest flow → wrangler secrets. Mock-GitHub test passes.
 - [x] App live (2026-11-11): Worker https://prov-github-app.prov-github-app.workers.dev, GitHub App `prov-who-wrote-this` (id 5719868, installed on all Hude06 repos); PR comment + check run verified on prov-action-test PR #1. Creds: `app/.prov-app.json` (gitignored) + Worker secrets
+- [x] PR line view (2026-11-11): check run notes every block (agents, people, unrecorded). Worker `/pr/:owner/:repo/:n` = GitHub-style diff + blame column (`app/public/pr.html`, data `app/src/prview.ts`); GitHub sign-in (`app/src/session.ts`, AES-GCM cookie, viewer token for all reads, strict CSP). Linked from comment + check "Details". SESSION_KEY set
+- [ ] User: App settings → Callback URL `…workers.dev/auth/callback` + generate client secret → `pbpaste | npx wrangler secret put CLIENT_SECRET`
 - [ ] Action + App both on a repo = two identical comments/checks → pick one per repo (App preferred; drop workflow)
 - [ ] Publish action: public repo so others can `uses:` it (currently `uses: ./action` in test repo)
 - [ ] GitHub App PR overlay + certificate (needs hosted server + app registration)

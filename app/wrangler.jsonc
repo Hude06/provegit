@@ -6,6 +6,14 @@
   "observability": {
     "enabled": true,
     "traces": { "enabled": true }
+  },
+  // The PR page (public/pr.html) is only served by the Worker, after sign-in.
+  "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": true, "html_handling": "none" },
+  "vars": {
+    "PUBLIC_URL": "https://prov-github-app.prov-github-app.workers.dev",
+    // The App's OAuth client id (public; from the App's settings page).
+    "CLIENT_ID": "Iv23liBCGwg9MY06omhf"
   }
-  // Secrets (never in this file): APP_ID, PRIVATE_KEY (PKCS#8 PEM), WEBHOOK_SECRET — set by `npm run register`.
+  // Secrets (never in this file): APP_ID, PRIVATE_KEY (PKCS#8 PEM), WEBHOOK_SECRET — set by `npm run register`;
+  // CLIENT_SECRET (App settings → "Generate a new client secret"); SESSION_KEY (random, encrypts sign-in cookies).
 }

@@ -39,8 +39,8 @@ export async function upsertComment(gh: Gh, repo: string, pr: number, body: stri
 
 export const CHECK_NAME = "prov: who wrote this";
 
-/** Completed, neutral check run whose annotations mark agent-written blocks (API limit: 50 per request). */
-export async function postCheckRun(gh: Gh, repo: string, head: string, r: Report): Promise<string> {
+/** Completed, neutral check run whose annotations name who wrote each block of added lines (API limit: 50 per request). */
+export async function postCheckRun(gh: Gh, repo: string, head: string, r: Report, detailsUrl?: string): Promise<string> {
   const anns = annotations(r).slice(0, 1000);
   const agentLines = [...r.totals].filter(([k]) => r.owners.get(k)!.actor.kind === "agent").reduce((s, [, n]) => s + n, 0);
   const title = r.added ? `${Math.round((agentLines / r.added) * 100)}% of ${r.added} added lines written by AI agents` : "No added lines";
@@ -50,6 +50,7 @@ export async function postCheckRun(gh: Gh, repo: string, head: string, r: Report
     head_sha: head,
     status: "completed",
     conclusion: "neutral",
+    ...(detailsUrl ? { details_url: detailsUrl } : {}),
     output: { title, summary, annotations: anns.slice(0, 50) },
   });
   for (let i = 50; i < anns.length; i += 50) {
