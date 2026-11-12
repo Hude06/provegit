@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -29,6 +30,24 @@ export function writeCreds(creds: Creds): void {
 export function githubLogin(): string | undefined {
   const c = readCreds();
   return c.github?.login;
+}
+
+const gitConfig = (key: string, cwd: string): string | undefined => {
+  try {
+    return execFileSync("git", ["config", key], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() || undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+/** Who "the human" is: the linked GitHub login, else the git email's local part (minus GitHub noreply's "123+"), else git user.name. */
+export function gitIdentity(cwd = process.cwd()): string {
+  return (
+    githubLogin() ??
+    gitConfig("user.email", cwd)?.split("@")[0].replace(/^\d+\+/, "") ??
+    gitConfig("user.name", cwd)?.split(" ")[0] ??
+    "anon"
+  );
 }
 
 export function clientId(): string | undefined {

@@ -57,3 +57,8 @@ Stack: TypeScript (hooks ecosystem), SQLite, no model APIs. Demo repo with 3 age
 - [x] Confirm hook APIs today: Codex CLI lifecycle hooks + payload schema verified; Claude Code hooks verified; Cursor not relevant — target set is Claude Code/Codex/OpenCode/Pi/T3/Grok (verified 2026-11-10). OpenCode events resolved (see Hooks verified).
 - [ ] Monitor absorption weekly: Semgrep Guardian expansion, Anthropic/OpenAI attribution features (moat watchlist in report).
 - [ ] Reddit evidence (r/git, r/ExplainLikeImCalibration blocked) — retry with proper UA.
+
+- [x] Shell edits (2026-11-12): Bash / exec_command / bash hooked (`cli/src/shell.ts`). Pre: catch up unrecorded edits (→ human or agent mid-edit), save time + HEAD. Post: files with newer mtime → agent; content == HEAD blob → owners from HEAD's note (checkout/restore/stash/pull). ~0.2 s per hook.
+- [ ] Shell gaps: background commands (`run_in_background`) finish after Post → caught up as human at next command; concurrent human edits during a long command → agent; `git stash pop` (≠ HEAD) → agent
+- [ ] Rebase/amend: carry notes to rewritten commits by matching content (currently `notes.rewriteMode=ignore` → "not recorded")
+- [ ] Squash merge: App writes a combined note for the squash commit on `pull_request.closed` (merged)
