@@ -1,6 +1,8 @@
 import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { findProvRoot, readText, Store } from "./store.js";
+import { gitIdentity } from "./creds.js";
+import { shellAfter, shellBefore } from "./shell.js";
 
 /**
  * Harness-neutral hook input. Adapters:
@@ -17,7 +19,12 @@ export type HookInput = {
   effort?: string;
   /** Absolute paths the tool call touches. */
   paths: string[];
+  /** A shell command: it may write any file, so changes are found by scanning the repo. */
+  shell?: boolean;
 };
+
+/** Shell tools: Claude Code `Bash`, Codex `exec_command` (older: `shell`, `local_shell`), OpenCode `bash`. */
+export const SHELL_TOOLS = /^(bash|exec_command|shell|local_shell|unified_exec)$/i;
 
 function readStdin(): Promise<string> {
   return new Promise((res) => {
@@ -100,6 +107,7 @@ export function parsePayload(harness: string, p: any): HookInput | undefined {
   }
   const effort = objField(p.effort, "level") ?? scalar(p.reasoning_effort) ?? scalar(p.model_reasoning_effort) ?? objField(p.options?.effortLevel, "level");
   const ev = String(p.hook_event_name ?? "PostToolUse");
+  const shell = SHELL_TOOLS.test(scalar(p.tool_name) ?? scalar(p.tool) ?? "");
   return {
     harness,
     phase: /^pre/i.test(ev) ? "pre" : "post",
@@ -108,12 +116,38 @@ export function parsePayload(harness: string, p: any): HookInput | undefined {
     cwd,
     model,
     effort,
-    paths: pathsFromToolInput(p.tool_input, cwd),
+    paths: shell ? [] : pathsFromToolInput(p.tool_input, cwd),
+    shell,
   };
+}
+
+/** Shell command: snapshot before, credit whatever it changed after. */
+function recordShell(h: HookInput, log?: (s: string) => void): void {
+  const root = findProvRoot(h.cwd);
+  if (!root) return;
+  const store = new Store(root);
+  try {
+    const env = store.agent(h.harness, h.model, h.effort);
+    const human = store.human(gitIdentity(root));
+    // Own window key, so a parallel Edit call's per-path window is untouched. Path-less = watcher credits the agent meanwhile.
+    const key = `${h.sessionKey}:sh`;
+    if (h.phase === "pre") {
+      shellBefore(store, root, key, human);
+      store.touchSession(key, env, []);
+      return;
+    }
+    const r = shellAfter(store, root, key, env, human);
+    for (const p of r.agent) log?.(`${p} → ${store.envLabel(env)} (shell)`);
+    for (const p of r.fromGit) log?.(`${p} → from git`);
+    store.closeSession(key, []);
+  } finally {
+    store.close();
+  }
 }
 
 /** Record one hook event. Repos without `prov init` (no .prov/prov.db) are left untouched. */
 export function record(h: HookInput, log?: (s: string) => void): void {
+  if (h.shell) return recordShell(h, log);
   const byRoot = new Map<string, string[]>();
   const add = (root: string | undefined, abs?: string) => {
     if (!root) return;

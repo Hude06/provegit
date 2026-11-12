@@ -10,7 +10,7 @@ import { integrate } from "./integrations.js";
 import { login, logout, openBrowser } from "./login.js";
 import { uiServer } from "./ui.js";
 import { tui } from "./tui.js";
-import { githubLogin, readCreds } from "./creds.js";
+import { gitIdentity, readCreds } from "./creds.js";
 import { sync } from "./sync.js";
 import { serve } from "./serve.js";
 import { githubInit } from "./github.js";
@@ -41,10 +41,6 @@ const git = (args: string[], cwd = process.cwd()): string | undefined => {
     return undefined;
   }
 };
-
-function gitIdentity(): string {
-  return githubLogin() ?? git(["config", "user.email"])?.split("@")[0] ?? git(["config", "user.name"])?.split(" ")[0] ?? "anon";
-}
 
 /** Initialised prov root above cwd, else the git root, else cwd. */
 function projectRoot(): string {

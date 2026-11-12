@@ -124,6 +124,21 @@ export class Store {
     });
   }
 
+  /** Set a file's content with known ownership (e.g. restored from git, owners taken from that commit's note). */
+  setFile(path: string, content: string, runs: Run[], envId: number): void {
+    this.tx(() => this.write(path, this.file(path)?.content ?? "", content, runs, envId));
+  }
+
+  /** When prov last recorded each file (seconds), for spotting files changed since. */
+  lastRecorded(): Map<string, number> {
+    const rows = this.db.prepare("SELECT path, MAX(ts) AS ts FROM events GROUP BY path").all() as any[];
+    return new Map(rows.map((r) => [r.path, Number(r.ts)]));
+  }
+
+  metaDelete(key: string): void {
+    this.db.prepare("DELETE FROM meta WHERE key=?").run(key);
+  }
+
   claim(path: string, content: string, envId: number): void {
     this.baseline(path, content, envId);
   }
