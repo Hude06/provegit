@@ -30,6 +30,8 @@ const server = createServer(async (req, res) => {
       description: "Shows which lines in a pull request were written by AI agents and which by people (from prov's git notes).",
       hook_attributes: { url: `${workerUrl}/webhook`, active: true },
       redirect_url: `http://127.0.0.1:${port}/callback`,
+      callback_urls: [`${workerUrl}/auth/callback`], // "Sign in with GitHub" for the PR page
+      request_oauth_on_install: false,
       public: false,
       default_permissions: { contents: "read", pull_requests: "write", checks: "write", metadata: "read" },
       default_events: ["pull_request"],
@@ -50,7 +52,7 @@ const server = createServer(async (req, res) => {
       const pkcs8 = createPrivateKey(app.pem).export({ type: "pkcs8", format: "pem" }).toString();
       // Local fallback copy (gitignored, 0600) in case a secret upload fails.
       const file = join(here, ".prov-app.json");
-      writeFileSync(file, JSON.stringify({ id: app.id, slug: app.slug, html_url: app.html_url, client_id: app.client_id, webhook_secret: app.webhook_secret, pem: pkcs8 }, null, 2));
+      writeFileSync(file, JSON.stringify({ id: app.id, slug: app.slug, html_url: app.html_url, client_id: app.client_id, webhook_secret: app.webhook_secret, client_secret: app.client_secret, pem: pkcs8 }, null, 2));
       chmodSync(file, 0o600);
       const put = (key, value) => {
         const p = spawnSync("npx", ["wrangler", "secret", "put", key], { cwd: here, input: value, encoding: "utf8" });
@@ -59,6 +61,8 @@ const server = createServer(async (req, res) => {
       put("APP_ID", String(app.id));
       put("PRIVATE_KEY", pkcs8);
       put("WEBHOOK_SECRET", app.webhook_secret);
+      put("CLIENT_SECRET", app.client_secret);
+      put("SESSION_KEY", randomBytes(32).toString("base64url"));
       const install = `${app.html_url}/installations/new`;
       page("Done", `<p>Created <b>${esc(app.slug)}</b> and saved its secrets to the Worker.</p><p><a href="${install}">Install it on a repository →</a></p>`);
       console.log(`created GitHub App ${app.slug} (id ${app.id}); secrets stored in the Worker`);

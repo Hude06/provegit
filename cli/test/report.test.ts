@@ -14,7 +14,7 @@ const note = (commit: string, files: Note["files"]): Note => ({
   files,
 });
 
-test("buildReport: newest note per file wins; agent blocks become annotations", () => {
+test("buildReport: newest note per file wins; every block becomes an annotation", () => {
   const c1 = note("c1", { "a.ts": { lines: 4, owners: [[1, 4, 0]], added: {} } });
   const c2 = note("c2", { "a.ts": { lines: 6, owners: [[1, 2, 0], [3, 5, 1], [6, 6, 0]], added: {} } });
   const r = buildReport(
@@ -27,9 +27,11 @@ test("buildReport: newest note per file wins; agent blocks become annotations", 
   assert.equal(r.totals.get("?"), 1);
   assert.deepEqual(r.missingNotes, ["c3"]);
   const anns = annotations(r);
-  assert.equal(anns.length, 1);
-  assert.deepEqual([anns[0].path, anns[0].start_line, anns[0].end_line], ["a.ts", 3, 5]);
-  assert.match(anns[0].title, /claude · claude-opus-5-5 \(high\)/);
+  assert.deepEqual(anns.map((a) => [a.path, a.start_line, a.end_line, a.title]), [
+    ["a.ts", 3, 5, "Written by claude · claude-opus-5-5 (high)"],
+    ["a.ts", 6, 6, "Written by jude"],
+    ["b.ts", 1, 1, "Not recorded"],
+  ]);
   const md = markdown(r);
   assert.ok(md.startsWith(MARKER));
   assert.match(md, /\*\*5 added lines\*\* across 2 files: claude · claude-opus-5-5 \(high\) 60%, jude 20%, not recorded 20%/);

@@ -71,6 +71,30 @@ export function addedLines(patch: string): number[] {
   return out;
 }
 
+/** Ownership of `f` at the PR head: the newest PR commit whose note covers the file (or why there is none). */
+export function fileOwnership(commits: PrCommit[], bySha: Map<string, PrCommit>, f: Pick<PrFile, "path" | "lastCommit">) {
+  let note: Note | undefined;
+  let reason: string | undefined;
+  if (f.lastCommit && bySha.has(f.lastCommit)) {
+    note = bySha.get(f.lastCommit)!.note;
+    if (!note?.files[f.path]) {
+      reason = `last changed in ${f.lastCommit.slice(0, 7)}, which has no prov note`;
+      note = undefined;
+    }
+  } else {
+    for (let i = commits.length - 1; i >= 0 && !note; i--) if (commits[i].note?.files[f.path]) note = commits[i].note;
+    if (!note) reason = "no prov note covers this file";
+  }
+  return { note, nf: note?.files[f.path], reason };
+}
+
+/** Who wrote head line `line` according to a file's note entry. */
+export function actorAt(note: Note | undefined, nf: Note["files"][string] | undefined, line: number): NoteActor {
+  if (!nf || !note) return UNRECORDED;
+  for (const [a, b, i] of nf.owners) if (line >= a && line <= b) return note.actors[i] ?? UNRECORDED;
+  return UNRECORDED;
+}
+
 export function buildReport(commits: PrCommit[], files: PrFile[]): Report {
   const owners = new Map<string, Owner>();
   const own = (a: NoteActor): Owner => {
@@ -86,25 +110,8 @@ export function buildReport(commits: PrCommit[], files: PrFile[]): Report {
 
   for (const f of files) {
     if (!f.added.length) continue;
-    // Ownership at head = the newest PR commit whose note covers this file.
-    let note: Note | undefined;
-    let reason: string | undefined;
-    if (f.lastCommit && bySha.has(f.lastCommit)) {
-      note = bySha.get(f.lastCommit)!.note;
-      if (!note?.files[f.path]) {
-        reason = `last changed in ${f.lastCommit.slice(0, 7)}, which has no prov note`;
-        note = undefined;
-      }
-    } else {
-      for (let i = commits.length - 1; i >= 0 && !note; i--) if (commits[i].note?.files[f.path]) note = commits[i].note;
-      if (!note) reason = "no prov note covers this file";
-    }
-    const nf = note?.files[f.path];
-    const lineOwner = (line: number): Owner => {
-      if (!nf || !note) return own(UNRECORDED);
-      for (const [a, b, i] of nf.owners) if (line >= a && line <= b) return own(note.actors[i] ?? UNRECORDED);
-      return own(UNRECORDED);
-    };
+    const { note, nf, reason } = fileOwnership(commits, bySha, f);
+    const lineOwner = (line: number): Owner => own(actorAt(note, nf, line));
     const by = new Map<string, number>();
     let cur: Block | undefined;
     for (const line of [...f.added].sort((a, b) => a - b)) {
@@ -130,7 +137,7 @@ const sorted = (m: Map<string, number>) => [...m].sort((a, b) => b[1] - a[1]);
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
 /** Sticky PR comment / job summary body. */
-export function markdown(r: Report, opts: { headSha?: string; toolUrl?: string } = {}): string {
+export function markdown(r: Report, opts: { headSha?: string; toolUrl?: string; viewUrl?: string } = {}): string {
   const name = (k: string) => displayName(r.owners.get(k)!.actor);
   const out: string[] = [MARKER, "### Who wrote this PR"];
   if (!r.added) {
@@ -141,6 +148,7 @@ export function markdown(r: Report, opts: { headSha?: string; toolUrl?: string }
   out.push("", `**${plural(r.added, "added line")}** across ${plural(r.files.length, "file")}: ` + top.map(([k, n]) => `${name(k)} ${pct(n, r.added)}%`).join(", "));
   out.push("", "| Author | Lines | Share |", "|---|---:|---|");
   for (const [k, n] of top) out.push(`| ${name(k)} | ${n} | \`${bar(n, r.added)}\` ${pct(n, r.added)}% |`);
+  if (opts.viewUrl) out.push("", `**[See who wrote each line →](${opts.viewUrl})**`);
   out.push("", "<details><summary>By file</summary>", "", "| File | Added | Written by |", "|---|---:|---|");
   for (const f of [...r.files].sort((a, b) => b.added - a.added)) {
     const who = f.recorded ? sorted(f.by).map(([k, n]) => `${name(k)} ${n}`).join(", ") : `not recorded (${f.reason})`;
@@ -164,20 +172,23 @@ export function markdown(r: Report, opts: { headSha?: string; toolUrl?: string }
 
 export type Annotation = { path: string; start_line: number; end_line: number; annotation_level: "notice"; title: string; message: string };
 
-/** Check Run annotations: one per block of lines written by an AI agent. */
+/** Check Run annotations: one per block of added lines, naming who wrote it (agents, people and unrecorded). */
 export function annotations(r: Report): Annotation[] {
-  return r.blocks
-    .filter((b) => b.owner.actor.kind === "agent")
-    .map((b) => {
-      const a = b.owner.actor;
-      const n = b.end - b.start + 1;
-      return {
-        path: b.path,
-        start_line: b.start,
-        end_line: b.end,
-        annotation_level: "notice" as const,
-        title: `Written by ${displayName(a)}`,
-        message: `${plural(n, "line")} written by ${a.harness ?? "an agent"}${a.model ? ` using ${a.model}` : ""}${a.effort ? ` at ${a.effort} effort` : ""}.`,
-      };
-    });
+  return r.blocks.map((b) => {
+    const a = b.owner.actor;
+    const n = b.end - b.start + 1;
+    const lines = plural(n, "line");
+    let message: string;
+    if (a.kind === "agent") message = `${lines} written by ${a.harness ?? "an agent"}${a.model ? ` using ${a.model}` : ""}${a.effort ? ` at ${a.effort} effort` : ""}.`;
+    else if (a.kind === "human") message = `${lines} written by ${displayName(a)}.`;
+    else message = `${lines} not recorded by prov (made without prov running, or the commit's note wasn't pushed).`;
+    return {
+      path: b.path,
+      start_line: b.start,
+      end_line: b.end,
+      annotation_level: "notice" as const,
+      title: a.kind === "unknown" ? "Not recorded" : `Written by ${displayName(a)}`,
+      message,
+    };
+  });
 }

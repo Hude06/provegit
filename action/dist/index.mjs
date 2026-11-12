@@ -44,6 +44,26 @@ function addedLines(patch) {
   }
   return out;
 }
+function fileOwnership(commits, bySha, f) {
+  let note;
+  let reason;
+  if (f.lastCommit && bySha.has(f.lastCommit)) {
+    note = bySha.get(f.lastCommit).note;
+    if (!note?.files[f.path]) {
+      reason = `last changed in ${f.lastCommit.slice(0, 7)}, which has no prov note`;
+      note = void 0;
+    }
+  } else {
+    for (let i = commits.length - 1; i >= 0 && !note; i--) if (commits[i].note?.files[f.path]) note = commits[i].note;
+    if (!note) reason = "no prov note covers this file";
+  }
+  return { note, nf: note?.files[f.path], reason };
+}
+function actorAt(note, nf, line) {
+  if (!nf || !note) return UNRECORDED;
+  for (const [a, b, i] of nf.owners) if (line >= a && line <= b) return note.actors[i] ?? UNRECORDED;
+  return UNRECORDED;
+}
 function buildReport(commits, files) {
   const owners = /* @__PURE__ */ new Map();
   const own = (a) => {
@@ -58,24 +78,8 @@ function buildReport(commits, files) {
   let added = 0;
   for (const f of files) {
     if (!f.added.length) continue;
-    let note;
-    let reason;
-    if (f.lastCommit && bySha.has(f.lastCommit)) {
-      note = bySha.get(f.lastCommit).note;
-      if (!note?.files[f.path]) {
-        reason = `last changed in ${f.lastCommit.slice(0, 7)}, which has no prov note`;
-        note = void 0;
-      }
-    } else {
-      for (let i = commits.length - 1; i >= 0 && !note; i--) if (commits[i].note?.files[f.path]) note = commits[i].note;
-      if (!note) reason = "no prov note covers this file";
-    }
-    const nf = note?.files[f.path];
-    const lineOwner = (line) => {
-      if (!nf || !note) return own(UNRECORDED);
-      for (const [a, b, i] of nf.owners) if (line >= a && line <= b) return own(note.actors[i] ?? UNRECORDED);
-      return own(UNRECORDED);
-    };
+    const { note, nf, reason } = fileOwnership(commits, bySha, f);
+    const lineOwner = (line) => own(actorAt(note, nf, line));
     const by = /* @__PURE__ */ new Map();
     let cur;
     for (const line of [...f.added].sort((a, b) => a - b)) {
@@ -109,6 +113,7 @@ function markdown(r, opts = {}) {
   out.push("", `**${plural(r.added, "added line")}** across ${plural(r.files.length, "file")}: ` + top.map(([k, n]) => `${name(k)} ${pct(n, r.added)}%`).join(", "));
   out.push("", "| Author | Lines | Share |", "|---|---:|---|");
   for (const [k, n] of top) out.push(`| ${name(k)} | ${n} | \`${bar(n, r.added)}\` ${pct(n, r.added)}% |`);
+  if (opts.viewUrl) out.push("", `**[See who wrote each line \u2192](${opts.viewUrl})**`);
   out.push("", "<details><summary>By file</summary>", "", "| File | Added | Written by |", "|---|---:|---|");
   for (const f of [...r.files].sort((a, b) => b.added - a.added)) {
     const who = f.recorded ? sorted(f.by).map(([k, n]) => `${name(k)} ${n}`).join(", ") : `not recorded (${f.reason})`;
@@ -129,16 +134,21 @@ function markdown(r, opts = {}) {
   return out.join("\n");
 }
 function annotations(r) {
-  return r.blocks.filter((b) => b.owner.actor.kind === "agent").map((b) => {
+  return r.blocks.map((b) => {
     const a = b.owner.actor;
     const n = b.end - b.start + 1;
+    const lines = plural(n, "line");
+    let message;
+    if (a.kind === "agent") message = `${lines} written by ${a.harness ?? "an agent"}${a.model ? ` using ${a.model}` : ""}${a.effort ? ` at ${a.effort} effort` : ""}.`;
+    else if (a.kind === "human") message = `${lines} written by ${displayName(a)}.`;
+    else message = `${lines} not recorded by prov (made without prov running, or the commit's note wasn't pushed).`;
     return {
       path: b.path,
       start_line: b.start,
       end_line: b.end,
       annotation_level: "notice",
-      title: `Written by ${displayName(a)}`,
-      message: `${plural(n, "line")} written by ${a.harness ?? "an agent"}${a.model ? ` using ${a.model}` : ""}${a.effort ? ` at ${a.effort} effort` : ""}.`
+      title: a.kind === "unknown" ? "Not recorded" : `Written by ${displayName(a)}`,
+      message
     };
   });
 }
@@ -176,7 +186,7 @@ async function upsertComment(gh, repo, pr, body, mine = () => true) {
   return "posted PR comment";
 }
 var CHECK_NAME = "prov: who wrote this";
-async function postCheckRun(gh, repo, head, r) {
+async function postCheckRun(gh, repo, head, r, detailsUrl) {
   const anns = annotations(r).slice(0, 1e3);
   const agentLines = [...r.totals].filter(([k]) => r.owners.get(k).actor.kind === "agent").reduce((s, [, n]) => s + n, 0);
   const title = r.added ? `${Math.round(agentLines / r.added * 100)}% of ${r.added} added lines written by AI agents` : "No added lines";
@@ -186,6 +196,7 @@ async function postCheckRun(gh, repo, head, r) {
     head_sha: head,
     status: "completed",
     conclusion: "neutral",
+    ...detailsUrl ? { details_url: detailsUrl } : {},
     output: { title, summary, annotations: anns.slice(0, 50) }
   });
   for (let i = 50; i < anns.length; i += 50) {
